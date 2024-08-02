@@ -97,6 +97,9 @@ type model struct {
 
 	// Compacting TUI config
 	compactTUIflag bool
+
+	// Hide columns flag
+	hideColumns bool
 }
 
 type doneDownloadingMsg struct{}
@@ -212,7 +215,11 @@ func runQueryAndUpdateTable(m model, forceUpdateTable, maintainCursor bool) tea.
 				// The default filter was cleared for this session, so don't apply it
 				defaultFilter = ""
 			}
-			rows, entries, searchErr := getRows(m.ctx, conf.DisplayedColumns, m.shellName, defaultFilter, query, PADDED_NUM_ENTRIES)
+			displayedColumns := conf.DisplayedColumns
+			if m.hideColumns {
+				displayedColumns = []string{"Command"}
+			}
+			rows, entries, searchErr := getRows(m.ctx, displayedColumns, m.shellName, defaultFilter, query, PADDED_NUM_ENTRIES)
 			return asyncQueryFinishedMsg{queryId, rows, entries, searchErr, forceUpdateTable, maintainCursor, nil}
 		}
 	}
@@ -276,6 +283,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			return m, nil
+		case key.Matches(msg, loadedKeyBindings.HideColumns):
+			m.table.ToggleHideColumns()
+			m.hideColumns = !m.hideColumns
 			return m, nil
 		default:
 			pendingCommands := tea.Batch()
@@ -487,7 +498,7 @@ func getRowsFromAiSuggestions(ctx context.Context, columnNames []string, shellNa
 func getRows(ctx context.Context, columnNames []string, shellName, defaultFilter, query string, numEntries int) ([]table.Row, []*data.HistoryEntry, error) {
 	db := hctx.GetDb(ctx)
 	config := hctx.GetConf(ctx)
-	if config.AiCompletion && !config.IsOffline && strings.HasPrefix(query, "?") && len(query) > 1 {
+	if config.AiCompletion && !config.IsOffline && strings.HasPrefix(query, "?") && len(query) > 2 {
 		return getRowsFromAiSuggestions(ctx, columnNames, shellName, query)
 	}
 	searchResults, err := lib.Search(ctx, db, defaultFilter+" "+query, numEntries)
@@ -656,8 +667,9 @@ func makeTable(ctx context.Context, shellName string, rows []table.Row) (table.M
 			key.WithKeys("end"),
 			key.WithHelp("end", "go to end"),
 		),
-		MoveLeft:  loadedKeyBindings.TableLeft,
-		MoveRight: loadedKeyBindings.TableRight,
+		MoveLeft:    loadedKeyBindings.TableLeft,
+		MoveRight:   loadedKeyBindings.TableRight,
+		HideColumns: loadedKeyBindings.HideColumns,
 	}
 	_, terminalHeight, err := getTerminalSize()
 	if err != nil {

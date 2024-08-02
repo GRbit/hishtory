@@ -30,6 +30,11 @@ type Model struct {
 	hcol    int
 	hstep   int
 	hcursor int
+
+	hideCols   bool
+	cmdIdx     int
+	hiddenCols []Column
+	hiddenRows []Row
 }
 
 // CellPosition holds row and column indexes.
@@ -61,6 +66,7 @@ type KeyMap struct {
 	GotoBottom   key.Binding
 	MoveLeft     key.Binding
 	MoveRight    key.Binding
+	HideColumns  key.Binding
 }
 
 // DefaultKeyMap returns a default set of keybindings.
@@ -269,6 +275,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.MoveLeft(m.hstep)
 		case key.Matches(msg, m.KeyMap.MoveRight):
 			m.MoveRight(m.hstep)
+		case key.Matches(msg, m.KeyMap.HideColumns):
+			m.ToggleHideColumns()
 		}
 	}
 
@@ -334,7 +342,14 @@ func (m Model) Rows() []Row {
 
 // SetRows set a new rows state.
 func (m *Model) SetRows(r []Row) {
-	m.rows = r
+	if m.hideCols && len(r) > 0 && len(r[0]) > 1 {
+		m.rows = make([]Row, len(r))
+		for i, row := range r {
+			m.rows[i] = Row{row[m.cmdIdx]}
+		}
+	} else {
+		m.rows = r
+	}
 	m.UpdateViewport()
 }
 
@@ -449,6 +464,36 @@ func (m *Model) MoveLeft(n int) {
 // MoveRight scrolls right
 func (m *Model) MoveRight(n int) {
 	m.hcursor = clamp(m.hcursor+n, 0, m.MaxHScroll())
+	m.UpdateViewport()
+}
+
+// ToggleHideColumns hides or shows all the columns but the first one
+func (m *Model) ToggleHideColumns() {
+	m.hideCols = !m.hideCols
+	if m.hideCols {
+		m.hiddenCols = m.cols[:]
+		var (
+			width int
+		)
+		for i, col := range m.cols {
+			width += col.Width + 1
+			if col.Title == "Command" {
+				m.cmdIdx = i
+			}
+		}
+		m.cols = []Column{
+			{Title: "Command", Width: width},
+		}
+
+		m.hiddenRows = m.rows[:]
+		m.rows = make([]Row, len(m.hiddenRows))
+		for i, row := range m.hiddenRows {
+			m.rows[i] = Row{row[m.cmdIdx]}
+		}
+	} else {
+		m.cols = m.hiddenCols
+		m.rows = m.hiddenRows
+	}
 	m.UpdateViewport()
 }
 
